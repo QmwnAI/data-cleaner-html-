@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Data Cleaning Assistant</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #262b36; --text: #e6e9ef;
+    --muted: #8a93a6; --accent: #4f8cff; --accent-2: #6ee7b7; --warn: #f5a524; --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px;
+  }
+  header {
+    padding: 20px 28px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 18px; margin: 0; font-weight: 600; }
+  header .sub { color: var(--muted); font-size: 13px; }
+  main { display: grid; grid-template-columns: 320px 1fr; gap: 0; min-height: calc(100vh - 62px); }
+  aside {
+    background: var(--panel); border-right: 1px solid var(--border);
+    padding: 20px; overflow-y: auto;
+  }
+  section.workspace { padding: 20px 28px; overflow: auto; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 24px 0 10px; font-weight: 600; }
+  h2:first-child { margin-top: 0; }
+  .drop {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 28px 16px;
+    text-align: center; cursor: pointer; transition: 0.15s;
+  }
+  .drop:hover, .drop.drag { border-color: var(--accent); background: rgba(79,140,255,0.06); }
+  .drop input { display: none; }
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 6px 0; gap: 10px; }
+  .row label { flex: 1; color: var(--text); font-size: 13px; }
+  select, input[type=number], input[type=text] {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 13px;
+  }
+  input[type=checkbox] { accent-color: var(--accent); }
+  button {
+    background: var(--accent); color: white; border: 0; border-radius: 6px;
+    padding: 8px 14px; font-size: 13px; cursor: pointer; font-weight: 500;
+  }
+  button.secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button:hover:not(:disabled) { filter: brightness(1.1); }
+  .actions { display: flex; gap: 8px; margin-top: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px;
+  }
+  .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .stat .delta { font-size: 12px; color: var(--accent-2); margin-top: 2px; }
+  .stat .delta.neg { color: var(--warn); }
+  table {
+    width: 100%; border-collapse: collapse; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  }
+  th, td {
+    padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border);
+    font-size: 13px; white-space: nowrap;
+  }
+  th { background: #1c202a; color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  tbody tr:hover { background: rgba(255,255,255,0.02); }
+  td.null { color: var(--danger); font-style: italic; }
+  .tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 8px 14px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent;
+    font-size: 13px;
+  }
+  .tab.active { color: var(--text); border-bottom-color: var(--accent); }
+  .empty { color: var(--muted); text-align: center; padding: 60px 20px; }
+  .report { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .report h3 { margin: 0 0 8px; font-size: 13px; }
+  .report ul { margin: 4px 0 12px; padding-left: 20px; color: var(--muted); }
+  .report li { margin: 2px 0; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px;
+    background: rgba(79,140,255,0.15); color: var(--accent); margin-left: 6px;
+  }
+  .scroll { overflow-x: auto; max-height: 55vh; }
+  .col-profile {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px; margin-bottom: 8px;
+  }
+  .col-profile .name { font-weight: 600; margin-bottom: 4px; }
+  .col-profile .meta { color: var(--muted); font-size: 12px; }
+  .bar { height: 6px; background: var(--border); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--warn); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Data Cleaning Assistant</h1>
+  <span class="sub">CSV / TSV · runs entirely in your browser</span>
+</header>
+
+<main>
+  <aside>
+    <h2>1. Load file</h2>
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept=".csv,.tsv,.txt">
+      <div>Drop a CSV/TSV here<br><span style="color:var(--muted);font-size:12px">or click to browse</span></div>
+    </label>
+
+    <h2>2. Cleaning options</h2>
+    <div class="row"><label>Normalize column names</label><input type="checkbox" id="opt-rename" checked></div>
+    <div class="row"><label>Trim whitespace & normalize NAs</label><input type="checkbox" id="opt-trim" checked></div>
+    <div class="row"><label>Infer types (num/date/bool)</label><input type="checkbox" id="opt-coerce" checked></div>
+    <div class="row"><label>Remove duplicate rows</label><input type="checkbox" id="opt-dedup" checked></div>
+    <div class="row">
+      <label>Fill missing</label>
+      <select id="opt-fillna">
+        <option value="none">Leave</option>
+        <option value="auto">Auto (mean/mode)</option>
+        <option value="mean">Mean (numeric)</option>
+        <option value="median">Median (numeric)</option>
+        <option value="mode">Mode</option>
+        <option value="zero">Zero / "Unknown"</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Flag outliers</label>
+      <select id="opt-outliers">
+        <option value="none">None</option>
+        <option value="iqr">IQR (1.5×)</option>
+        <option value="zscore">Z-score (>3)</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>Drop rows &gt; % missing</label>
+      <input type="number" id="opt-row-thresh" min="0" max="100" value="100" style="width: 70px">
+    </div>
+    <div class="row">
+      <label>Drop cols &gt; % missing</label>
+      <input type="number" id="opt-col-thresh" min="0" max="100" value="100" style="width: 70px">
+    </div>
+
+    <div class="actions">
+      <button id="btn-clean" disabled>Clean data</button>
+      <button id="btn-reset" class="secondary" disabled>Reset</button>
+    </div>
+
+    <h2>3. Export</h2>
+    <div class="actions">
+      <button id="btn-download-csv" class="secondary" disabled>Download CSV</button>
+      <button id="btn-download-report" class="secondary" disabled>Report</button>
+    </div>
+  </aside>
+
+  <section class="workspace">
+    <div id="empty" class="empty">
+      <p style="font-size:16px;color:var(--text)">No file loaded</p>
+      <p>Drop a CSV or TSV in the left panel to begin.</p>
+    </div>
+
+    <div id="content" style="display:none">
+      <div class="stats" id="stats"></div>
+
+      <div class="tabs">
+        <div class="tab active" data-tab="preview">Preview</div>
+        <div class="tab" data-tab="profile">Profile</div>
+        <div class="tab" data-tab="report">Report</div>
+      </div>
+
+      <div id="tab-preview" class="scroll"></div>
+      <div id="tab-profile" style="display:none"></div>
+      <div id="tab-report" style="display:none"></div>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { raw: null, cleaned: null, report: null, headers: [], fileName: "" };
+
+// ---------- CSV parsing (RFC 4180-ish) ----------
+function parseCSV(text, sep) {
+  if (!sep) sep = text.indexOf("\t") >= 0 && text.indexOf(",") < 0 ? "\t" : ",";
+  const rows = []; let field = ""; let row = []; let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+      } else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === sep) { row.push(field); field = ""; }
+      else if (c === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+      else if (c === "\r") { /* skip */ }
+      else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  const headers = rows.shift() || [];
+  return rows.filter(r => r.length && !(r.length===1 && r[0]==="")).map(r => {
+    const o = {};
+    headers.forEach((h, i) => o[h] = r[i] === undefined ? "" : r[i]);
+    return o;
+  }).concat().length ? { headers, data: rows.filter(r => r.length && !(r.length===1 && r[0]==="")).map(r => {
+    const o = {};
+    headers.forEach((h, i) => o[h] = r[i] === undefined ? "" : r[i]);
+    return o;
+  }) } : { headers, data: [] };
+}
+
+function toCSV(headers, data) {
+  const esc = (v) => {
+    if (v === null || v === undefined) return "";
+    let s = String(v);
+    if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+  const lines = [headers.map(esc).join(",")];
+  for (const row of data) lines.push(headers.map(h => esc(row[h])).join(","));
+  return lines.join("\n");
+}
+
+// ---------- Type inference ----------
+const NA_TOKENS = new Set(["", "na", "n/a", "null", "none", "nan", "-", "?"]);
+const isNA = (v) => v === null || v === undefined || (typeof v === "string" && NA_TOKENS.has(v.trim().toLowerCase()));
+
+function toNum(v) {
+  if (isNA(v)) return null;
+  const s = String(v).replace(/,/g, "").trim();
+  if (!/^-?\d*\.?\d+([eE][+-]?\d+)?$/.test(s)) return NaN;
+  const n = Number(s);
+  return isFinite(n) ? n : NaN;
+}
+
+function toDate(v) {
+  if (isNA(v)) return null;
+  const s = String(v).trim();
+  // Common formats
+  const patterns = [
+    /^\d{4}-\d{1,2}-\d{1,2}([T ]\d{1,2}:\d{2}(:\d{2})?)?$/,
+    /^\d{4}\/\d{1,2}\/\d{1,2}$/,
+    /^\d{1,2}\/\d{1,2}\/\d{4}$/,
+    /^\d{1,2}-\d{1,2}-\d{4}$/,
+  ];
+  if (!patterns.some(p => p.test(s))) return NaN;
+  const d = new Date(s.replace(/-/g, "/").replace("T", " "));
+  return isNaN(d.getTime()) ? NaN : d.toISOString().slice(0, s.length > 10 ? 19 : 10);
+}
+
+const BOOL_MAP = { "true": true, "yes": true, "y": true, "1": true, "t": true,
+                   "false": false, "no": false, "n": false, "0": false, "f": false };
+function toBool(v) {
+  if (isNA(v)) return null;
+  return BOOL_MAP[String(v).toLowerCase().trim()];
+}
+
+function inferType(col, data) {
+  const vals = data.map(r => r[col]).filter(v => !isNA(v));
+  if (!vals.length) return "empty";
+  const boolOK = vals.every(v => BOOL_MAP[String(v).toLowerCase().trim()] !== undefined);
+  if (boolOK && new Set(vals.map(v => String(v).toLowerCase())).size <= 4) return "bool";
+  const numOK = vals.filter(v => !isNaN(toNum(v))).length / vals.length;
+  if (numOK >= 0.95) return "number";
+  const dateOK = vals.filter(v => { const d = toDate(v); return d !== null && !isNaN(d); }).length / vals.length;
+  if (dateOK >= 0.9) return "date";
+  return "string";
+}
+
+// ---------- Cleaning pipeline ----------
+function normalizeColName(name, taken) {
+  let n = String(name).trim().toLowerCase().replace(/\s+/g, "_").replace(/[^0-9a-z_]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "") || "col";
+  if (taken.has(n)) { let i = 2; while (taken.has(`${n}_${i}`)) i++; n = `${n}_${i}`; }
+  taken.add(n);
+  return n;
+}
+
+function profileData(headers, data) {
+  const p = { rows: data.length, cols: headers.length, duplicates: 0, columns: {} };
+  const seen = new Set(); let dup = 0;
+  for (const r of data) {
+    const k = headers.map(h => r[h]).join("");
+    if (seen.has(k)) dup++; else seen.add(k);
+  }
+  p.duplicates = dup;
+  for (const h of headers) {
+    const vals = data.map(r => r[h]);
+    const missing = vals.filter(isNA).length;
+    const unique = new Set(vals.filter(v => !isNA(v)).map(String)).size;
+    p.columns[h] = { missing, pctMissing: data.length ? (missing/data.length*100) : 0, unique, type: inferType(h, data) };
+  }
+  return p;
+}
+
+function clean(opts) {
+  const report = { steps: [], before: null, after: null };
+  let headers = state.raw.headers.slice();
+  let data = state.raw.data.map(r => ({ ...r }));
+  report.before = profileData(headers, data);
+
+  // 1. Rename cols
+  if (opts.rename) {
+    const taken = new Set(); const map = {};
+    const newHeaders = headers.map(h => { const n = normalizeColName(h, taken); map[h] = n; return n; });
+    if (headers.some((h, i) => h !== newHeaders[i])) {
+      report.steps.push({ name: "Renamed columns", detail: Object.entries(map).filter(([a,b]) => a!==b).map(([a,b]) => `${a} → ${b}`) });
+    }
+    data = data.map(r => { const o = {}; headers.forEach((h,i) => o[newHeaders[i]] = r[h]); return o; });
+    headers = newHeaders;
+  }
+
+  // 2. Trim & normalize NA
+  if (opts.trim) {
+    let count = 0;
+    for (const r of data) for (const h of headers) {
+      if (typeof r[h] === "string") {
+        const t = r[h].trim();
+        if (t !== r[h]) count++;
+        if (NA_TOKENS.has(t.toLowerCase())) { r[h] = null; count++; }
+        else r[h] = t;
+      }
+    }
+    if (count) report.steps.push({ name: "Trimmed / normalized NA tokens", detail: [`${count} cell(s) updated`] });
+  }
+
+  // 3. Type coercion
+  const types = {};
+  if (opts.coerce) {
+    const coerced = [];
+    for (const h of headers) {
+      const t = inferType(h, data);
+      types[h] = t;
+      if (t === "number") for (const r of data) { const n = toNum(r[h]); r[h] = (n === null || isNaN(n)) ? null : n; }
+      else if (t === "date") for (const r of data) { const d = toDate(r[h]); r[h] = (d === null || isNaN(d)) ? null : d; }
+      else if (t === "bool") for (const r of data) { const b = toBool(r[h]); r[h] = b === undefined ? null : b; }
+      if (t !== "string" && t !== "empty") coerced.push(`${h} → ${t}`);
+    }
+    if (coerced.length) report.steps.push({ name: "Coerced types", detail: coerced });
+  } else {
+    for (const h of headers) types[h] = inferType(h, data);
+  }
+
+  // 4. Drop empty rows/cols
+  if (opts.colThresh < 100) {
+    const drop = headers.filter(h => {
+      const missing = data.filter(r => isNA(r[h])).length;
+      return data.length && (missing / data.length * 100) >= opts.colThresh;
+    });
+    if (drop.length) {
+      headers = headers.filter(h => !drop.includes(h));
+      for (const r of data) for (const h of drop) delete r[h];
+      report.steps.push({ name: "Dropped mostly-empty columns", detail: drop });
+    }
+  }
+  if (opts.rowThresh < 100) {
+    const before = data.length;
+    data = data.filter(r => {
+      const missing = headers.filter(h => isNA(r[h])).length;
+      return headers.length && (missing / headers.length * 100) <= opts.rowThresh;
+    });
+    if (before - data.length) report.steps.push({ name: "Dropped mostly-empty rows", detail: [`${before - data.length} row(s)`] });
+  }
+
+  // 5. Dedup
+  if (opts.dedup) {
+    const seen = new Set(); const kept = [];
+    for (const r of data) {
+      const k = headers.map(h => String(r[h])).join("");
+      if (!seen.has(k)) { seen.add(k); kept.push(r); }
+    }
+    if (kept.length !== data.length) report.steps.push({ name: "Removed duplicate rows", detail: [`${data.length - kept.length} row(s)`] });
+    data = kept;
+  }
+
+  // 6. Fill missing
+  if (opts.fillna !== "none") {
+    const filled = [];
+    for (const h of headers) {
+      const vals = data.map(r => r[h]);
+      if (!vals.some(isNA)) continue;
+      const t = types[h] || inferType(h, data);
+      let fillVal = null, label = "";
+      if ((t === "number") && (opts.fillna === "mean" || opts.fillna === "auto")) {
+        const nums = vals.filter(v => typeof v === "number");
+        if (nums.length) { fillVal = nums.reduce((a,b) => a+b, 0) / nums.length; label = `mean=${fillVal.toFixed(3)}`; }
+      } else if (t === "number" && opts.fillna === "median") {
+        const nums = vals.filter(v => typeof v === "number").sort((a,b) => a-b);
+        if (nums.length) { fillVal = nums[Math.floor(nums.length/2)]; label = `median=${fillVal}`; }
+      } else if (t === "number" && opts.fillna === "zero") {
+        fillVal = 0; label = "0";
+      } else if (opts.fillna === "mode" || opts.fillna === "auto") {
+        const counts = {}; for (const v of vals) if (!isNA(v)) counts[String(v)] = (counts[String(v)]||0) + 1;
+        const entries = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+        if (entries.length) { fillVal = entries[0][0]; label = `mode='${fillVal}'`; }
+      } else if (opts.fillna === "zero") {
+        fillVal = "Unknown"; label = "'Unknown'";
+      }
+      if (fillVal !== null && label) {
+        for (const r of data) if (isNA(r[h])) r[h] = fillVal;
+        filled.push(`${h}: ${label}`);
+      }
+    }
+    if (filled.length) report.steps.push({ name: "Filled missing values", detail: filled });
+  }
+
+  // 7. Outliers
+  if (opts.outliers !== "none") {
+    const flagged = [];
+    for (const h of headers.slice()) {
+      const nums = data.map(r => r[h]).filter(v => typeof v === "number");
+      if (nums.length < 4) continue;
+      let mask;
+      if (opts.outliers === "iqr") {
+        const sorted = nums.slice().sort((a,b) => a-b);
+        const q1 = sorted[Math.floor(sorted.length * 0.25)];
+        const q3 = sorted[Math.floor(sorted.length * 0.75)];
+        const iqr = q3 - q1;
+        const lo = q1 - 1.5 * iqr, hi = q3 + 1.5 * iqr;
+        mask = (v) => typeof v === "number" && (v < lo || v > hi);
+      } else {
+        const mu = nums.reduce((a,b) => a+b, 0) / nums.length;
+        const sd = Math.sqrt(nums.reduce((s,v) => s + (v-mu)**2, 0) / nums.length);
+        if (!sd) continue;
+        mask = (v) => typeof v === "number" && Math.abs((v-mu)/sd) > 3;
+      }
+      const col = `${h}__is_outlier`; let n = 0;
+      for (const r of data) { const f = mask(r[h]); r[col] = f; if (f) n++; }
+      if (n) { headers.push(col); flagged.push(`${h}: ${n}`); }
+    }
+    if (flagged.length) report.steps.push({ name: "Flagged outliers", detail: flagged });
+  }
+
+  report.after = profileData(headers, data);
+  return { headers, data, report };
+}
+
+// ---------- Rendering ----------
+function renderStats(before, after) {
+  const stat = (label, v, delta) => `
+    <div class="stat">
+      <div class="label">${label}</div>
+      <div class="value">${v}</div>
+      ${delta !== undefined ? `<div class="delta ${delta.startsWith("-")||delta==="0" ? "":"neg"}">${delta}</div>` : ""}
+    </div>`;
+  const d = (a, b) => { const x = a - b; return x === 0 ? "0" : (x > 0 ? "+" : "") + x; };
+  $("stats").innerHTML =
+    stat("Rows", after.rows, before ? d(after.rows, before.rows) : undefined) +
+    stat("Columns", after.cols, before ? d(after.cols, before.cols) : undefined) +
+    stat("Duplicates", after.duplicates) +
+    stat("Missing cells", Object.values(after.columns).reduce((s,c) => s + c.missing, 0));
+}
+
+function renderPreview(headers, data) {
+  const rows = data.slice(0, 200);
+  const cell = (v) => v === null || v === undefined || v === "" ? '<td class="null">null</td>' : `<td>${escapeHTML(v)}</td>`;
+  $("tab-preview").innerHTML = `
+    <table>
+      <thead><tr>${headers.map(h => `<th>${escapeHTML(h)}</th>`).join("")}</tr></thead>
+      <tbody>${rows.map(r => `<tr>${headers.map(h => cell(r[h])).join("")}</tr>`).join("")}</tbody>
+    </table>
+    ${data.length > 200 ? `<p style="color:var(--muted);margin-top:8px">Showing 200 of ${data.length} rows</p>` : ""}
+  `;
+}
+
+function renderProfile(profile) {
+  $("tab-profile").innerHTML = Object.entries(profile.columns).map(([name, c]) => `
+    <div class="col-profile">
+      <div class="name">${escapeHTML(name)} <span class="badge">${c.type}</span></div>
+      <div class="meta">${c.unique} unique · ${c.missing} missing (${c.pctMissing.toFixed(1)}%)</div>
+      <div class="bar"><div style="width:${c.pctMissing}%"></div></div>
+    </div>
+  `).join("");
+}
+
+function renderReport(report) {
+  if (!report) { $("tab-report").innerHTML = `<p class="empty">Run "Clean data" to see the report.</p>`; return; }
+  $("tab-report").innerHTML = `
+    <div class="report">
+      <h3>Summary</h3>
+      <ul>
+        <li>Rows: ${report.before.rows} → ${report.after.rows}</li>
+        <li>Columns: ${report.before.cols} → ${report.after.cols}</li>
+      </ul>
+      ${report.steps.length ? report.steps.map(s => `
+        <h3>${escapeHTML(s.name)}</h3>
+        <ul>${s.detail.map(d => `<li>${escapeHTML(d)}</li>`).join("")}</ul>
+      `).join("") : `<p style="color:var(--muted)">No changes applied.</p>`}
+    </div>`;
+}
+
+function escapeHTML(v) {
+  if (v === true) return "true"; if (v === false) return "false";
+  return String(v).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+// ---------- Wiring ----------
+function loadFile(file) {
+  state.fileName = file.name;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const sep = file.name.endsWith(".tsv") ? "\t" : undefined;
+    state.raw = parseCSV(reader.result, sep);
+    state.cleaned = { headers: state.raw.headers.slice(), data: state.raw.data.map(r => ({...r})) };
+    state.report = null;
+    $("empty").style.display = "none";
+    $("content").style.display = "block";
+    $("btn-clean").disabled = false; $("btn-reset").disabled = false;
+    $("btn-download-csv").disabled = false; $("btn-download-report").disabled = true;
+    const p = profileData(state.raw.headers, state.raw.data);
+    renderStats(null, p);
+    renderPreview(state.raw.headers, state.raw.data);
+    renderProfile(p);
+    renderReport(null);
+  };
+  reader.readAsText(file);
+}
+
+$("file").addEventListener("change", e => e.target.files[0] && loadFile(e.target.files[0]));
+$("drop").addEventListener("dragover", e => { e.preventDefault(); e.currentTarget.classList.add("drag"); });
+$("drop").addEventListener("dragleave", e => e.currentTarget.classList.remove("drag"));
+$("drop").addEventListener("drop", e => {
+  e.preventDefault(); e.currentTarget.classList.remove("drag");
+  if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+});
+
+$("btn-clean").addEventListener("click", () => {
+  const opts = {
+    rename: $("opt-rename").checked,
+    trim: $("opt-trim").checked,
+    coerce: $("opt-coerce").checked,
+    dedup: $("opt-dedup").checked,
+    fillna: $("opt-fillna").value,
+    outliers: $("opt-outliers").value,
+    rowThresh: Number($("opt-row-thresh").value),
+    colThresh: Number($("opt-col-thresh").value),
+  };
+  const { headers, data, report } = clean(opts);
+  state.cleaned = { headers, data };
+  state.report = report;
+  renderStats(report.before, report.after);
+  renderPreview(headers, data);
+  renderProfile(report.after);
+  renderReport(report);
+  $("btn-download-report").disabled = false;
+});
+
+$("btn-reset").addEventListener("click", () => {
+  if (!state.raw) return;
+  state.cleaned = { headers: state.raw.headers.slice(), data: state.raw.data.map(r => ({...r})) };
+  state.report = null;
+  const p = profileData(state.raw.headers, state.raw.data);
+  renderStats(null, p);
+  renderPreview(state.raw.headers, state.raw.data);
+  renderProfile(p);
+  renderReport(null);
+  $("btn-download-report").disabled = true;
+});
+
+function download(name, content, mime) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+$("btn-download-csv").addEventListener("click", () => {
+  const { headers, data } = state.cleaned;
+  const base = state.fileName.replace(/\.[^.]+$/, "");
+  download(`${base}_cleaned.csv`, toCSV(headers, data), "text/csv");
+});
+
+$("btn-download-report").addEventListener("click", () => {
+  const base = state.fileName.replace(/\.[^.]+$/, "");
+  download(`${base}_report.json`, JSON.stringify(state.report, null, 2), "application/json");
+});
+
+document.querySelectorAll(".tab").forEach(t => t.addEventListener("click", () => {
+  document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+  t.classList.add("active");
+  for (const id of ["preview","profile","report"]) $(`tab-${id}`).style.display = id === t.dataset.tab ? "block" : "none";
+}));
+</script>
+</body>
+</html>
